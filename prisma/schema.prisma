@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Site {
+  id        String     @id @default(cuid())
+  name      String
+  url       String
+  checkFreq Int        @default(5)
+  createdAt DateTime   @default(now())
+  checks    Check[]
+  seoChecks SeoCheck[]
+  geoChecks GeoCheck[]
+}
+
+model Check {
+  id            String   @id @default(cuid())
+  siteId        String
+  site          Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  checkedAt     DateTime @default(now())
+  status        String
+  httpStatus    Int?
+  ttfb          Int?
+  responseTime  Int?
+  sslDaysLeft   Int?
+  dnsResolved   Boolean?
+  redirectCount Int?
+  error         String?
+}
+
+model SeoCheck {
+  id            String   @id @default(cuid())
+  siteId        String
+  site          Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  checkedAt     DateTime @default(now())
+
+  // Crawlability
+  robotsTxtFound  Boolean?
+  robotsBlocked   Boolean?
+  sitemapFound    Boolean?
+  sitemapUrlCount Int?
+  canonicalUrl    String?
+  hasHreflang     Boolean?
+
+  // Indexability
+  noindex         Boolean?
+  hasNosnippet    Boolean?
+  maxSnippet      Int?
+
+  // Metadata
+  title           String?
+  titleLength     Int?
+  description     String?
+  descLength      Int?
+  hasOgTitle      Boolean?
+  hasOgDesc       Boolean?
+  hasOgImage      Boolean?
+
+  // Schema
+  hasSchema           Boolean?
+  hasArticleSchema    Boolean?
+  hasBreadcrumbSchema Boolean?
+  hasHowToSchema      Boolean?
+  hasProductSchema    Boolean?
+  hasFaqSchema        Boolean?
+  hasOrgSchema        Boolean?
+
+  // Content
+  wordCount         Int?
+  wordCountOk       Boolean?
+  h1Count           Int?
+  h2Count           Int?
+  h3Count           Int?
+  headingHierarchyOk Boolean?
+  internalLinks     Int?
+  externalLinks     Int?
+  imgWithoutAlt     Int?
+  hasDateSignal     Boolean?
+
+  // Technical
+  hasIndexNow     Boolean?
+
+  // Score & Issues
+  score           Int?
+  issues          String?
+}
+
+model GeoCheck {
+  id            String   @id @default(cuid())
+  siteId        String
+  site          Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  checkedAt     DateTime @default(now())
+
+  // Discoverability
+  llmsTxtFound      Boolean?
+  aiTxtFound        Boolean?
+  gptBotAllowed     Boolean?
+  claudeBotAllowed  Boolean?
+  perplexityAllowed Boolean?
+  googleExtAllowed  Boolean?
+  sitemapFound      Boolean?
+  hasStructuredData Boolean?
+  hasCanonical      Boolean?
+  discoverScore     Int?
+
+  // Answerability
+  hasFaq            Boolean?
+  wordCount         Int?
+  wordCountOk       Boolean?
+  avgParaWords      Int?
+  hasLists          Boolean?
+  headingCount      Int?
+  answerScore       Int?
+
+  // Citation Readiness
+  hasAuthor         Boolean?
+  hasDateInfo       Boolean?
+  hasExtLinks       Boolean?
+  isHttps           Boolean?
+  hasOrgSchema      Boolean?
+  hasArticleSchema  Boolean?
+  hasTrustLinks     Boolean?
+  citationScore     Int?
+
+  // Entity Coverage
+  hasOrgName        Boolean?
+  hasProductMention Boolean?
+  hasLocation       Boolean?
+  hasContactInfo    Boolean?
+  entityScore       Int?
+
+  // AI Readability
+  hasSemanticHtml   Boolean?
+  jsIndependent     Boolean?
+  hasTables         Boolean?
+  hasListsAi        Boolean?
+  hasAltTexts       Boolean?
+  paraLengthOk      Boolean?
+  headingStructOk   Boolean?
+  readabilityScore  Int?
+
+  // Total
+  totalScore        Int?
+  findings          String?
+}

@@ -1,0 +1,45 @@
+-- CreateTable
+CREATE TABLE "GeoCheck" (
+    "id" TEXT NOT NULL,
+    "siteId" TEXT NOT NULL,
+    "checkedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "llmsTxtFound" BOOLEAN,
+    "gptBotAllowed" BOOLEAN,
+    "perplexityAllowed" BOOLEAN,
+    "sitemapFound" BOOLEAN,
+    "hasStructuredData" BOOLEAN,
+    "hasCanonical" BOOLEAN,
+    "discoverScore" INTEGER,
+    "hasFaq" BOOLEAN,
+    "wordCount" INTEGER,
+    "avgParaWords" INTEGER,
+    "hasLists" BOOLEAN,
+    "headingCount" INTEGER,
+    "answerScore" INTEGER,
+    "hasAuthor" BOOLEAN,
+    "hasDateInfo" BOOLEAN,
+    "hasExtLinks" BOOLEAN,
+    "isHttps" BOOLEAN,
+    "hasOrgSchema" BOOLEAN,
+    "hasTrustLinks" BOOLEAN,
+    "citationScore" INTEGER,
+    "hasOrgName" BOOLEAN,
+    "hasProductMention" BOOLEAN,
+    "hasLocation" BOOLEAN,
+    "hasContactInfo" BOOLEAN,
+    "entityScore" INTEGER,
+    "hasSemanticHtml" BOOLEAN,
+    "hasTables" BOOLEAN,
+    "hasListsAi" BOOLEAN,
+    "hasAltTexts" BOOLEAN,
+    "paraLengthOk" BOOLEAN,
+    "headingStructOk" BOOLEAN,
+    "readabilityScore" INTEGER,
+    "totalScore" INTEGER,
+    "findings" TEXT,
+
+    CONSTRAINT "GeoCheck_pkey" PRIMARY KEY ("id")
+);
+
+-- AddForeignKey
+ALTER TABLE "GeoCheck" ADD CONSTRAINT "GeoCheck_siteId_fkey" FOREIGN KEY ("siteId") REFERENCES "Site"("id") ON DELETE CASCADE ON UPDATE CASCADE;
