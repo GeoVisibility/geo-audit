@@ -1,14 +1,18 @@
 # WOMP — Web Operations Monitoring Platform
 
-Local website monitoring tool built with Next.js and PostgreSQL. Tracks uptime, SEO health, and GEO (Generative Engine Optimization) visibility for your sites.
+Self-hosted uptime, SEO & GEO (AI visibility) monitoring dashboard. Tracks whether your sites are up, whether search engines can index them, and whether AI systems (ChatGPT, Claude, Perplexity, Google AI Overviews) can find and cite them.
 
 ## Modules
 
+Uptime, SEO and GEO share a single crawl pass per site (one fetch of the HTML, `robots.txt`, `sitemap.xml`, `llms.txt`, `ai.txt`) — no duplicate requests, no duplicate checks. Signals that matter to both SEO and AI visibility (sitemap, canonical, Organization/Article/FAQ schema, word count, heading structure, external links, date signals, alt text) are owned by **GEO only**, since that's the module they matter most for.
+
 | Module | Description |
 |--------|-------------|
-| **Uptime** | HTTP status, TTFB, response time, SSL days remaining, DNS, redirects |
-| **SEO** | Title/description lengths, canonical, OG tags, structured data, heading hierarchy, word count, robots.txt, IndexNow |
-| **GEO** | AI bot access (GPTBot, ClaudeBot, PerplexityBot, Google-Extended), llms.txt, ai.txt, FAQ schema, citation readiness, entity coverage, AI readability |
+| **Uptime (Hız)** | HTTP status, TTFB, response time, SSL days remaining, DNS, redirects |
+| **SEO** | robots.txt / noindex / snippet directives, title & description length, Open Graph tags, hreflang, IndexNow, internal links, BreadcrumbList/HowTo/Product schema |
+| **GEO** | AI bot access (GPTBot, ClaudeBot, PerplexityBot, Google-Extended), llms.txt/ai.txt, sitemap & canonical, structured data (Organization/Article/FAQ), content depth & heading structure, citation readiness, entity coverage, AI readability (JS-independence, semantic HTML, alt text) |
+
+A single **Rapor** (report) per site combines all three into one overall score (weighted: 25% speed, 30% SEO, **45% GEO** — GEO is the primary focus) and shows results in one screen, ordered **GEO → SEO → Hız**.
 
 ## Requirements
 
@@ -19,8 +23,8 @@ Local website monitoring tool built with Next.js and PostgreSQL. Tracks uptime, 
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/YOUR_USERNAME/womp.git
-cd womp
+git clone https://github.com/YOUR_USERNAME/geo-audit.git
+cd geo-audit
 
 # 2. Install dependencies
 npm install
@@ -46,9 +50,9 @@ Open in browser: http://localhost:3000
 ## Usage
 
 1. Click **"Site Ekle"** to add a website
-2. Click **"Kontrol Et"** on a site card to run an instant check
-3. Click **"Tümünü Kontrol Et"** to check all sites at once
-4. Use the **SEO** and **GEO** tabs on each site card for detailed analysis
+2. Click **"Kontrol Et"** on a site card for a quick uptime ping
+3. Click **"Rapor (Hız + SEO + GEO)"** to run the full check and open the combined report — one overall score, GEO shown first
+4. Click **"Tümünü Kontrol Et"** to run a quick uptime check on all sites at once
 
 ## Status Colors
 
@@ -69,5 +73,6 @@ Open in browser: http://localhost:3000
 ## Notes
 
 - This tool is designed to run **locally only** — not intended for production deployment
-- Database credentials in `docker-compose.yml` are for local use only
+- `docker-compose.yml` reads its Postgres user/password/db from `.env` (falls back to local-only dev defaults if unset) — never point it at a real database
+- The sites you track are stored only in your local database, never committed to this repo
 - Run weekly or on-demand; no background scheduling required

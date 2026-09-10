@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { StatusBadge } from "./StatusBadge";
-import { SeoPanel } from "./SeoPanel";
-import { GeoPanel } from "./GeoPanel";
+import { SiteReportModal } from "./SiteReportModal";
 
 interface Check {
   id: string;
@@ -36,6 +35,7 @@ interface Props {
 export function SiteCard({ site, onDeleted, onChecked }: Props) {
   const [checking, setChecking] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const latest = site.checks[0];
 
@@ -203,6 +203,12 @@ export function SiteCard({ site, onDeleted, onChecked }: Props) {
             {checking ? "Kontrol ediliyor..." : "Kontrol Et"}
           </button>
           <button
+            onClick={() => setReportOpen(true)}
+            className="px-3 py-1.5 bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-300 rounded-lg text-xs font-medium transition-colors"
+          >
+            Rapor (Hız + SEO + GEO)
+          </button>
+          <button
             onClick={deleteSite}
             disabled={deleting}
             className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
@@ -212,15 +218,9 @@ export function SiteCard({ site, onDeleted, onChecked }: Props) {
         </div>
       </div>
 
-      {/* SEO Paneli */}
-      <div className="mt-4 pt-4 border-t border-slate-700/50">
-        <SeoPanel siteId={site.id} />
-      </div>
-
-      {/* GEO Paneli */}
-      <div className="mt-3 pt-3 border-t border-slate-700/50">
-        <GeoPanel siteId={site.id} />
-      </div>
+      {reportOpen && (
+        <SiteReportModal siteId={site.id} siteName={site.name} onClose={() => setReportOpen(false)} />
+      )}
     </div>
   );
 }

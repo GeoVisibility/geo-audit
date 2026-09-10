@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import { URL } from "url";
+import { crawlSite, detectSchemaType, isBotBlocked, type CrawlData } from "./crawler";
 
 export interface GeoFinding {
   category: "discoverability" | "answerability" | "citation" | "entity" | "readability";
@@ -7,6 +8,11 @@ export interface GeoFinding {
   severity: "good" | "warning" | "error";
 }
 
+/**
+ * GEO, SEO ile çakışan tüm sinyallerin (sitemap, canonical, structured data,
+ * Organization/Article/FAQ schema, kelime sayısı, başlık yapısı, dış link,
+ * tarih sinyali, alt text) TEK SAHİBİDİR — bkz. lib/seo-checker.ts üstündeki not.
+ */
 export interface GeoResult {
   // Discoverability
   llmsTxtFound: boolean;
@@ -16,6 +22,7 @@ export interface GeoResult {
   perplexityAllowed: boolean;
   googleExtAllowed: boolean;
   sitemapFound: boolean;
+  sitemapUrlCount: number | null;
   hasStructuredData: boolean;
   hasCanonical: boolean;
   discoverScore: number;
@@ -52,6 +59,7 @@ export interface GeoResult {
   hasTables: boolean;
   hasListsAi: boolean;
   hasAltTexts: boolean;
+  imgWithoutAltCount: number;
   paraLengthOk: boolean;
   headingStructOk: boolean;
   readabilityScore: number;
@@ -60,68 +68,26 @@ export interface GeoResult {
   findings: GeoFinding[];
 }
 
-async function fetchText(url: string, timeoutMs = 8000): Promise<string | null> {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { "User-Agent": "WOMP-GEO-Checker/1.0" },
-    });
-    clearTimeout(timer);
-    if (!res.ok) return null;
-    return await res.text();
-  } catch {
-    return null;
-  }
-}
-
-function isBotBlocked(robotsText: string, botName: string): boolean {
-  const lines = robotsText.split("\n").map(l => l.trim().toLowerCase());
-  let inBlock = false;
-  for (const line of lines) {
-    if (line.startsWith("user-agent:")) {
-      inBlock = line.includes(botName.toLowerCase());
-    }
-    if (inBlock && line.startsWith("disallow:")) {
-      const path = line.replace("disallow:", "").trim();
-      if (path === "/" ) return true;
-    }
-  }
-  return false;
-}
-
 function score(checks: boolean[], weights: number[]): number {
   let total = 0, max = 0;
   checks.forEach((c, i) => { max += weights[i]; if (c) total += weights[i]; });
   return Math.round((total / max) * 100);
 }
 
-function detectSchemaType(scripts: string[], types: string[]): boolean {
-  return scripts.some(s => types.some(t => new RegExp(`"@type"\\s*:\\s*"${t}"`, "i").test(s)));
-}
-
 function checkJsIndependent($: cheerio.CheerioAPI): boolean {
-  // Heuristic: meaningful text in body without needing JS
-  // If body has substantial text content directly (not just script/style), it's likely static
   const clone = $.root().clone();
   clone.find("script, style, noscript").remove();
   const staticText = clone.find("body").text().replace(/\s+/g, " ").trim();
   return staticText.split(" ").filter(Boolean).length > 100;
 }
 
-export async function checkGeo(siteUrl: string): Promise<GeoResult> {
+export async function checkGeo(siteUrl: string, crawl?: CrawlData): Promise<GeoResult> {
   const base = new URL(siteUrl);
   const origin = base.origin;
   const findings: GeoFinding[] = [];
 
-  const [html, robotsText, sitemapText, llmsText, aiTxtText] = await Promise.all([
-    fetchText(siteUrl),
-    fetchText(`${origin}/robots.txt`),
-    fetchText(`${origin}/sitemap.xml`),
-    fetchText(`${origin}/llms.txt`),
-    fetchText(`${origin}/ai.txt`),
-  ]);
+  const data = crawl ?? (await crawlSite(siteUrl));
+  const { robotsText, llmsText, aiTxtText, schemaScripts, sitemapFound, sitemapUrlCount } = data;
 
   // ---------- DISCOVERABILITY ----------
   const llmsTxtFound = llmsText !== null;
@@ -139,10 +105,7 @@ export async function checkGeo(siteUrl: string): Promise<GeoResult> {
     googleExtAllowed = !isBotBlocked(robotsText, "Google-Extended");
   }
 
-  const sitemapFound = sitemapText !== null || (robotsText?.includes("Sitemap:") ?? false);
-
-  const $ = html ? cheerio.load(html) : null;
-  const schemaScripts = $ ? $('script[type="application/ld+json"]').toArray().map(el => $(el).html() ?? "") : [];
+  const $ = data.$;
   const hasStructuredData = schemaScripts.length > 0 || ($?.("[itemtype]").length ?? 0) > 0;
   const hasCanonical = $ ? !!$('link[rel="canonical"]').attr("href") : false;
 
@@ -163,14 +126,17 @@ export async function checkGeo(siteUrl: string): Promise<GeoResult> {
   if (!googleExtAllowed) findings.push({ category: "discoverability", message: "Google-Extended engellenmiş — AI Overviews'a giremeyebilir", severity: "error" });
   else findings.push({ category: "discoverability", message: "Google-Extended erişimine izin veriliyor", severity: "good" });
   if (!sitemapFound) findings.push({ category: "discoverability", message: "Sitemap yok — AI taraması için sitemap.xml ekleyin", severity: "warning" });
+  else findings.push({ category: "discoverability", message: `Sitemap mevcut${sitemapUrlCount ? ` (${sitemapUrlCount} URL)` : ""}`, severity: "good" });
   if (!hasStructuredData) findings.push({ category: "discoverability", message: "Structured data yok — AI içeriği zor anlıyor", severity: "error" });
+  else findings.push({ category: "discoverability", message: "Structured data (schema.org) mevcut", severity: "good" });
+  if (!hasCanonical) findings.push({ category: "discoverability", message: "Canonical tag eksik", severity: "warning" });
 
   // ---------- ANSWERABILITY ----------
   let hasFaq = false, wordCount = 0, avgParaWords = 0, hasLists = false, headingCount = 0;
 
   if ($) {
-    const faqSchema = schemaScripts.some(s => /FAQPage/i.test(s));
-    const faqHeadings = $("h2,h3").toArray().some(el => $(el).text().trim().endsWith("?"));
+    const faqSchema = schemaScripts.some((s) => /FAQPage/i.test(s));
+    const faqHeadings = $("h2,h3").toArray().some((el) => $(el).text().trim().endsWith("?"));
     hasFaq = faqSchema || faqHeadings;
 
     const bodyText = $("body").text().replace(/\s+/g, " ").trim();
@@ -200,34 +166,31 @@ export async function checkGeo(siteUrl: string): Promise<GeoResult> {
   else findings.push({ category: "answerability", message: `Kelime sayısı ideal aralıkta (${wordCount})`, severity: "good" });
   if (avgParaWords > 120) findings.push({ category: "answerability", message: `Paragraflar çok uzun (ort. ${avgParaWords} kelime) — ideal: 50–100`, severity: "warning" });
   if (!hasLists) findings.push({ category: "answerability", message: "Liste formatı yok — madde yapısı AI tarafından daha iyi işlenir", severity: "warning" });
+  if (headingCount < 3) findings.push({ category: "answerability", message: `Başlık sayısı az (${headingCount}) — içerik AI için bölümlenmemiş`, severity: "warning" });
 
   // ---------- CITATION READINESS ----------
   let hasAuthor = false, hasDateInfo = false, hasExtLinks = false;
   let hasOrgSchema = false, hasArticleSchema = false, hasTrustLinks = false;
   const isHttps = base.protocol === "https:";
 
-  // Sayfanın türünü belirle: kurumsal (ana, hizmet) mi, içerik (blog, makale) mi?
-  const isContentPage = schemaScripts.some(s =>
-    /\"@type\"\s*:\s*\"(Article|BlogPosting|NewsArticle)\"/i.test(s)
+  const isContentPage = schemaScripts.some((s) =>
+    /"@type"\s*:\s*"(Article|BlogPosting|NewsArticle)"/i.test(s)
   ) || (base.pathname !== "/" && /\/(blog|makale|article|post|news|yazi)\//i.test(base.pathname));
 
   if ($) {
-    // HTML işaretlemeleri
     const htmlAuthor = $('[rel="author"],.author,[itemprop="author"],meta[name="author"]').length > 0;
-    // Schema içinde author alanı var mı?
-    const schemaAuthor = schemaScripts.some(s => /"author"\s*:/i.test(s));
-    // Kurumsal sayfalarda Organization schema yazar yerine geçer
+    const schemaAuthor = schemaScripts.some((s) => /"author"\s*:/i.test(s));
     const orgAsAuthor = detectSchemaType(schemaScripts, ["Organization", "LocalBusiness", "Corporation"]);
     hasAuthor = htmlAuthor || schemaAuthor || (!isContentPage && orgAsAuthor);
 
     hasDateInfo = $("time,[itemprop='datePublished'],[itemprop='dateModified'],meta[property='article:published_time']").length > 0
-      || schemaScripts.some(s => /"dateModified"|"datePublished"/i.test(s));
-    hasExtLinks = $("a[href]").toArray().some(el => {
+      || schemaScripts.some((s) => /"dateModified"|"datePublished"/i.test(s));
+    hasExtLinks = $("a[href]").toArray().some((el) => {
       try { return new URL($(el).attr("href")!, siteUrl).origin !== origin; } catch { return false; }
     });
     hasOrgSchema = detectSchemaType(schemaScripts, ["Organization", "LocalBusiness", "Corporation"]);
     hasArticleSchema = detectSchemaType(schemaScripts, ["Article", "NewsArticle", "BlogPosting"]);
-    hasTrustLinks = $("a[href]").toArray().some(el => {
+    hasTrustLinks = $("a[href]").toArray().some((el) => {
       const href = ($(el).attr("href") ?? "").toLowerCase();
       return href.includes("/about") || href.includes("/hakkimizda") || href.includes("/privacy") || href.includes("/contact") || href.includes("/iletisim");
     });
@@ -242,7 +205,7 @@ export async function checkGeo(siteUrl: string): Promise<GeoResult> {
     const msg = isContentPage
       ? "Yazar bilgisi yok — içerik sayfalarında Author schema ekleyin (E-E-A-T sinyali)"
       : "Yazar/kuruluş bilgisi schema'da tanımlı değil — Organization schema ekleyin";
-    findings.push({ category: "citation", message: msg, severity: isContentPage ? "warning" : "info" });
+    findings.push({ category: "citation", message: msg, severity: "warning" });
   } else {
     findings.push({ category: "citation", message: "Yazar/kuruluş bilgisi schema'da mevcut", severity: "good" });
   }
@@ -251,6 +214,7 @@ export async function checkGeo(siteUrl: string): Promise<GeoResult> {
   if (!hasOrgSchema) findings.push({ category: "citation", message: "Organization schema yok — marka kimliği AI'a belirsiz", severity: "error" });
   else findings.push({ category: "citation", message: "Organization schema mevcut", severity: "good" });
   if (!hasArticleSchema && isContentPage) findings.push({ category: "citation", message: "Article schema yok — içerik türü AI'a belirsiz", severity: "warning" });
+  else if (hasArticleSchema) findings.push({ category: "citation", message: "Article/BlogPosting schema mevcut", severity: "good" });
   if (hasExtLinks) findings.push({ category: "citation", message: "Dış kaynaklara bağlantı var — otorite sinyali iyi", severity: "good" });
   else findings.push({ category: "citation", message: "Dış kaynak bağlantısı yok — birincil kaynaklara atıf ekleyin", severity: "warning" });
 
@@ -283,7 +247,7 @@ export async function checkGeo(siteUrl: string): Promise<GeoResult> {
 
   // ---------- AI READABILITY ----------
   let hasSemanticHtml = false, jsIndependent = false, hasTables = false;
-  let hasListsAi = false, hasAltTexts = false, paraLengthOk = false, headingStructOk = false;
+  let hasListsAi = false, hasAltTexts = false, imgWithoutAltCount = 0, paraLengthOk = false, headingStructOk = false;
 
   if ($) {
     hasSemanticHtml = $("article,main,section,aside,header,footer,nav").length >= 2;
@@ -291,7 +255,8 @@ export async function checkGeo(siteUrl: string): Promise<GeoResult> {
     hasTables = $("table").length > 0;
     hasListsAi = $("ul,ol").length > 0;
     const imgs = $("img").toArray();
-    hasAltTexts = imgs.length === 0 || imgs.every(el => !!($(el).attr("alt")));
+    imgWithoutAltCount = imgs.filter((el) => { const a = $(el).attr("alt"); return a === undefined || a === ""; }).length;
+    hasAltTexts = imgWithoutAltCount === 0;
     paraLengthOk = avgParaWords > 0 && avgParaWords <= 120;
     headingStructOk = $("h1").length === 1 && $("h2").length >= 2;
   }
@@ -305,7 +270,8 @@ export async function checkGeo(siteUrl: string): Promise<GeoResult> {
   else findings.push({ category: "readability", message: "İçerik büyük ölçüde JS'e bağımlı görünüyor — LLM botları göremeyebilir", severity: "error" });
   if (hasSemanticHtml) findings.push({ category: "readability", message: "Semantik HTML kullanılıyor — içerik bölümleri AI'a net", severity: "good" });
   else findings.push({ category: "readability", message: "Semantik HTML eksik (article/main/section)", severity: "warning" });
-  if (!hasAltTexts) findings.push({ category: "readability", message: "Görsel alt textleri eksik", severity: "warning" });
+  if (!hasAltTexts) findings.push({ category: "readability", message: `${imgWithoutAltCount} görselde alt text eksik`, severity: "warning" });
+  else findings.push({ category: "readability", message: "Tüm görsellerde alt text mevcut", severity: "good" });
   if (!headingStructOk) findings.push({ category: "readability", message: "Başlık hiyerarşisi zayıf — tek H1 ve en az 2 H2 olmalı", severity: "warning" });
   else findings.push({ category: "readability", message: "Başlık hiyerarşisi doğru", severity: "good" });
 
@@ -316,11 +282,11 @@ export async function checkGeo(siteUrl: string): Promise<GeoResult> {
 
   return {
     llmsTxtFound, aiTxtFound, gptBotAllowed, claudeBotAllowed, perplexityAllowed, googleExtAllowed,
-    sitemapFound, hasStructuredData, hasCanonical, discoverScore,
+    sitemapFound, sitemapUrlCount, hasStructuredData, hasCanonical, discoverScore,
     hasFaq, wordCount, wordCountOk, avgParaWords, hasLists, headingCount, answerScore,
     hasAuthor, hasDateInfo, hasExtLinks, isHttps, hasOrgSchema, hasArticleSchema, hasTrustLinks, citationScore,
     hasOrgName, hasProductMention, hasLocation, hasContactInfo, entityScore,
-    hasSemanticHtml, jsIndependent, hasTables, hasListsAi, hasAltTexts, paraLengthOk, headingStructOk, readabilityScore,
+    hasSemanticHtml, jsIndependent, hasTables, hasListsAi, hasAltTexts, imgWithoutAltCount, paraLengthOk, headingStructOk, readabilityScore,
     totalScore, findings,
   };
 }

@@ -1,12 +1,13 @@
-version: "3.9"
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: womp
-      POSTGRES_PASSWORD: womp123
-      POSTGRES_DB: womp
+      # Local dev only — reads from .env if set, otherwise falls back to
+      # these placeholder defaults. Never point this at a real database.
+      POSTGRES_USER: ${POSTGRES_USER:-womp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-womp_dev_only}
+      POSTGRES_DB: ${POSTGRES_DB:-womp}
     ports:
       - "5432:5432"
     volumes:

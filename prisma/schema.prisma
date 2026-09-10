@@ -32,6 +32,9 @@ model Check {
   error         String?
 }
 
+// SEO'ya özgü sinyaller. GEO ile çakışan alanlar (sitemap, canonical, schema,
+// kelime sayısı, başlık yapısı, dış link, tarih sinyali, alt text) kasıtlı
+// olarak burada YOK — bunların tek sahibi GeoCheck (bkz. lib/seo-checker.ts).
 model SeoCheck {
   id            String   @id @default(cuid())
   siteId        String
@@ -41,9 +44,6 @@ model SeoCheck {
   // Crawlability
   robotsTxtFound  Boolean?
   robotsBlocked   Boolean?
-  sitemapFound    Boolean?
-  sitemapUrlCount Int?
-  canonicalUrl    String?
   hasHreflang     Boolean?
 
   // Indexability
@@ -60,26 +60,13 @@ model SeoCheck {
   hasOgDesc       Boolean?
   hasOgImage      Boolean?
 
-  // Schema
-  hasSchema           Boolean?
-  hasArticleSchema    Boolean?
+  // SEO'ya özgü schema türleri
   hasBreadcrumbSchema Boolean?
   hasHowToSchema      Boolean?
   hasProductSchema    Boolean?
-  hasFaqSchema        Boolean?
-  hasOrgSchema        Boolean?
 
-  // Content
-  wordCount         Int?
-  wordCountOk       Boolean?
-  h1Count           Int?
-  h2Count           Int?
-  h3Count           Int?
-  headingHierarchyOk Boolean?
+  // Site mimarisi
   internalLinks     Int?
-  externalLinks     Int?
-  imgWithoutAlt     Int?
-  hasDateSignal     Boolean?
 
   // Technical
   hasIndexNow     Boolean?
@@ -103,6 +90,7 @@ model GeoCheck {
   perplexityAllowed Boolean?
   googleExtAllowed  Boolean?
   sitemapFound      Boolean?
+  sitemapUrlCount   Int?
   hasStructuredData Boolean?
   hasCanonical      Boolean?
   discoverScore     Int?
@@ -139,6 +127,7 @@ model GeoCheck {
   hasTables         Boolean?
   hasListsAi        Boolean?
   hasAltTexts       Boolean?
+  imgWithoutAltCount Int?
   paraLengthOk      Boolean?
   headingStructOk   Boolean?
   readabilityScore  Int?
